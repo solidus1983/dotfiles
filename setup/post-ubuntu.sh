@@ -33,7 +33,7 @@ done
 # --------------------------------------------------------------
 
 if command -v snap &> /dev/null && snap list snapd-desktop-integration &> /dev/null; then
-    sudo snap refresh snapd-desktop-integration --channel=candidate 2>/dev/null || true
+    sudo snap refresh snapd-desktop-integration --channel=candidate >> "$LOG_FILE" 2>&1 || true
 
     systemctl --user mask snapd-desktop-integration 2>/dev/null || true
 
@@ -69,7 +69,8 @@ fi
 # Oh My Posh
 # --------------------------------------------------------------
 
-curl -s https://ohmyposh.dev/install.sh | bash -s -- -d ~/.local/bin
+run_quiet "Installing Oh My Posh" bash -c \
+    'curl -s https://ohmyposh.dev/install.sh | bash -s -- -d ~/.local/bin'
 
 # --------------------------------------------------------------
 # ML4W Settings App
@@ -89,7 +90,7 @@ elif command -v apt-get \&> /dev/null; then\
     DISTRO="ubuntu"\
     info "Ubuntu detected. Installing base dependencies..."\
     sudo apt-get install -y git make jq gawk gum' "$ML4W_SETTINGS_SETUP"
-bash "$ML4W_SETTINGS_SETUP"
+run_quiet "Installing ML4W Settings App" bash "$ML4W_SETTINGS_SETUP"
 rm -f "$ML4W_SETTINGS_SETUP"
 
 # --------------------------------------------------------------
@@ -99,8 +100,8 @@ rm -f "$ML4W_SETTINGS_SETUP"
 TARGET_VERSION="4.0.0"
 
 force_install_matugen() {
-    info "Running: cargo install matugen --force"
-    cargo install matugen --force
+    run_quiet "Installing matugen" cargo install matugen --force
+    info "matugen installed."
 }
 
 if ! command -v matugen &> /dev/null; then
@@ -133,17 +134,19 @@ if [ ! -x /usr/local/bin/awww ] || [ ! -x /usr/local/bin/awww-daemon ]; then
     # from ever being (re)installed. Confirmed live: awww-daemon ran fine
     # (found via ~/.cargo/bin on PATH) while plain `awww` was
     # "command not found" in a shell without ~/.cargo/bin on PATH.
-    info "Building awww from source..."
     # common/build.rs probes for liblz4 via pkg-config; daemon/build.rs
     # generates Wayland protocol bindings and needs wayland.xml, which
     # comes from wayland-client's pkgdatadir (libwayland-dev). The
     # extension protocols it also needs (viewporter, fractional-scale)
     # come from wayland-protocols, already guaranteed by hyprland's own
     # apt dependency chain earlier in this script.
-    sudo apt-get install -y liblz4-dev pkg-config libwayland-dev
-    cargo install --git https://codeberg.org/LGFae/awww --tag v0.12.1 awww awww-daemon --locked
-    sudo cp "$HOME/.cargo/bin/awww" /usr/local/bin/awww
-    sudo cp "$HOME/.cargo/bin/awww-daemon" /usr/local/bin/awww-daemon
+    run_quiet "Building awww from source" bash -c '
+        set -e
+        sudo apt-get install -y liblz4-dev pkg-config libwayland-dev
+        cargo install --git https://codeberg.org/LGFae/awww --tag v0.12.1 awww awww-daemon --locked
+        sudo cp "$HOME/.cargo/bin/awww" /usr/local/bin/awww
+        sudo cp "$HOME/.cargo/bin/awww-daemon" /usr/local/bin/awww-daemon
+    '
     info "awww installed to /usr/local/bin"
 fi
 
@@ -151,7 +154,7 @@ fi
 # swww-removal guard in preflight-ubuntu.sh (same reasoning, different
 # wallpaper daemon).
 if dpkg -l 2>/dev/null | grep -q "^ii  hyprpaper "; then
-    sudo apt-get remove -y hyprpaper
+    sudo apt-get remove -y hyprpaper >> "$LOG_FILE" 2>&1
 fi
 
 # --------------------------------------------------------------
@@ -172,32 +175,34 @@ fi
 # --------------------------------------------------------------
 
 if ! command -v qs &> /dev/null; then
-    info "Building quickshell from source..."
-    sudo apt-get install -y \
-        cmake ninja-build pkg-config \
-        qt6-base-dev qt6-base-private-dev \
-        qt6-declarative-dev qt6-declarative-private-dev \
-        qt6-svg-dev qt6-shadertools-dev \
-        libcli11-dev \
-        libxcb1-dev \
-        libdrm-dev libgbm-dev libegl1-mesa-dev \
-        libcpptrace-dev libunwind-dev libzstd-dev \
-        libwayland-bin libwayland-dev wayland-protocols \
-        libglib2.0-dev \
-        libpipewire-0.3-dev \
-        libjemalloc-dev \
-        libvulkan-dev \
-        libpolkit-agent-1-dev libpolkit-gobject-1-dev \
-        libpam0g-dev \
-        spirv-tools
     QS_SRC=$(mktemp -d -t quickshell-src-XXXXXX)
-    git clone https://github.com/quickshell-mirror/quickshell "$QS_SRC"
-    (cd "$QS_SRC" && git checkout -q 4df562dfb2475a9057f0f33a8db75808efad8670)
-    cmake -S "$QS_SRC" -B "$QS_SRC/build" -GNinja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DDISTRIBUTOR="ML4W Ubuntu Support (source build)"
-    cmake --build "$QS_SRC/build"
-    sudo cmake --install "$QS_SRC/build"
+    run_quiet "Building quickshell from source" bash -c '
+        set -e
+        sudo apt-get install -y \
+            cmake ninja-build pkg-config \
+            qt6-base-dev qt6-base-private-dev \
+            qt6-declarative-dev qt6-declarative-private-dev \
+            qt6-svg-dev qt6-shadertools-dev \
+            libcli11-dev \
+            libxcb1-dev \
+            libdrm-dev libgbm-dev libegl1-mesa-dev \
+            libcpptrace-dev libunwind-dev libzstd-dev \
+            libwayland-bin libwayland-dev wayland-protocols \
+            libglib2.0-dev \
+            libpipewire-0.3-dev \
+            libjemalloc-dev \
+            libvulkan-dev \
+            libpolkit-agent-1-dev libpolkit-gobject-1-dev \
+            libpam0g-dev \
+            spirv-tools
+        git clone https://github.com/quickshell-mirror/quickshell "$1"
+        (cd "$1" && git checkout -q 4df562dfb2475a9057f0f33a8db75808efad8670)
+        cmake -S "$1" -B "$1/build" -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDISTRIBUTOR="ML4W Ubuntu Support (source build)"
+        cmake --build "$1/build"
+        sudo cmake --install "$1/build"
+    ' _ "$QS_SRC"
     rm -rf "$QS_SRC"
     info "quickshell installed."
 fi
@@ -207,11 +212,13 @@ fi
 # --------------------------------------------------------------
 
 if ! command -v nwg-dock-hyprland &> /dev/null; then
-    info "Building nwg-dock-hyprland from source..."
-    sudo apt-get install -y golang-go libgtk-3-dev libgtk-layer-shell-dev libgtk-4-dev
     NWG_DOCK_SRC=$(mktemp -d -t nwg-dock-XXXXXX)
-    git clone --depth=1 --branch v0.4.11 https://github.com/nwg-piotr/nwg-dock-hyprland "$NWG_DOCK_SRC"
-    (cd "$NWG_DOCK_SRC" && make get && make build && sudo make install)
+    run_quiet "Building nwg-dock-hyprland from source" bash -c '
+        set -e
+        sudo apt-get install -y golang-go libgtk-3-dev libgtk-layer-shell-dev libgtk-4-dev
+        git clone --depth=1 --branch v0.4.11 https://github.com/nwg-piotr/nwg-dock-hyprland "$1"
+        cd "$1" && make get && make build && sudo make install
+    ' _ "$NWG_DOCK_SRC"
     rm -rf "$NWG_DOCK_SRC"
     info "nwg-dock-hyprland installed."
 fi
@@ -221,28 +228,32 @@ fi
 # --------------------------------------------------------------
 
 if ! command -v walker &> /dev/null; then
-    info "Building Walker from source..."
-    sudo apt-get install -y protobuf-compiler libgtk-4-dev libgtk4-layer-shell-dev libpoppler-glib-dev libgdk-pixbuf-2.0-dev
     WALKER_SRC=$(mktemp -d -t walker-XXXXXX)
-    git clone --depth=1 --branch v2.16.2 https://github.com/abenz1267/walker "$WALKER_SRC"
-    (cd "$WALKER_SRC" && cargo build --release)
-    sudo cp "$WALKER_SRC/target/release/walker" /usr/local/bin/walker
+    run_quiet "Building Walker from source" bash -c '
+        set -e
+        sudo apt-get install -y protobuf-compiler libgtk-4-dev libgtk4-layer-shell-dev libpoppler-glib-dev libgdk-pixbuf-2.0-dev
+        git clone --depth=1 --branch v2.16.2 https://github.com/abenz1267/walker "$1"
+        (cd "$1" && cargo build --release)
+        sudo cp "$1/target/release/walker" /usr/local/bin/walker
+    ' _ "$WALKER_SRC"
     rm -rf "$WALKER_SRC"
     info "Walker installed."
 fi
 
 if [ ! -x /usr/local/bin/elephant ]; then
-    info "Building Elephant from source..."
-    sudo apt-get install -y golang-go
     ELEPHANT_SRC=$(mktemp -d -t elephant-XXXXXX)
-    git clone --depth=1 --branch v2.21.0 https://github.com/abenz1267/elephant "$ELEPHANT_SRC"
-    (cd "$ELEPHANT_SRC/cmd/elephant" && go build -o "$HOME/go/bin/elephant" .)
-    sudo cp "$HOME/go/bin/elephant" /usr/local/bin/elephant
-    mkdir -p "$HOME/.config/elephant/providers"
-    for _pdir in "$ELEPHANT_SRC/internal/providers"/*/; do
-        _provider=$(basename "$_pdir")
-        (cd "$_pdir" && go build -buildmode=plugin -o "$HOME/.config/elephant/providers/${_provider}.so" . 2>/dev/null) || true
-    done
+    run_quiet "Building Elephant from source" bash -c '
+        set -e
+        sudo apt-get install -y golang-go
+        git clone --depth=1 --branch v2.21.0 https://github.com/abenz1267/elephant "$1"
+        (cd "$1/cmd/elephant" && go build -o "$HOME/go/bin/elephant" .)
+        sudo cp "$HOME/go/bin/elephant" /usr/local/bin/elephant
+        mkdir -p "$HOME/.config/elephant/providers"
+        for _pdir in "$1/internal/providers"/*/; do
+            _provider=$(basename "$_pdir")
+            (cd "$_pdir" && go build -buildmode=plugin -o "$HOME/.config/elephant/providers/${_provider}.so" .) || true
+        done
+    ' _ "$ELEPHANT_SRC"
     rm -rf "$ELEPHANT_SRC"
     info "Elephant and providers installed."
 fi
@@ -255,28 +266,34 @@ fi
 # `make install` depend on it, so it has to be present before sourcing
 # this (shared, unmodified) script.
 
-sudo apt-get install -y scdoc
-source $repo_path/setup/clean-install-grimblast.sh
+run_quiet "Installing grimblast" bash -c '
+    set -e
+    sudo apt-get install -y scdoc
+    bash "$1"
+' _ "$repo_path/setup/clean-install-grimblast.sh"
 
 # --------------------------------------------------------------
 # Pip
 # --------------------------------------------------------------
 
-sudo apt-get install -y python3-pip pipx
-pipx install pywalfox
-pipx ensurepath
+run_quiet "Installing pywalfox" bash -c '
+    set -e
+    sudo apt-get install -y python3-pip pipx
+    pipx install pywalfox
+    pipx ensurepath
+'
 
 # --------------------------------------------------------------
 # Cursors
 # --------------------------------------------------------------
 
-source $repo_path/setup/_cursors.sh
+run_quiet "Installing cursors" bash "$repo_path/setup/_cursors.sh"
 
 # --------------------------------------------------------------
 # Fonts
 # --------------------------------------------------------------
 
-source $repo_path/setup/_fonts.sh
+run_quiet "Installing bundled fonts" bash "$repo_path/setup/_fonts.sh"
 
 # JetBrains Mono Nerd Font -- no Ubuntu package, unlike
 # ttf-jetbrains-mono-nerd (Arch)/nerd-fonts-JetBrainsMono (Fedora
@@ -285,13 +302,17 @@ source $repo_path/setup/_fonts.sh
 JBM_DEST="/usr/share/fonts/JetBrainsMonoNerd"
 if [ ! -d "$JBM_DEST" ]; then
     JBM_TMP=$(mktemp -d)
-    if curl -fsSL -o "$JBM_TMP/jbm.zip" \
-        "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip"; then
-        (cd "$JBM_TMP" && unzip -q jbm.zip -d extracted)
-        sudo mkdir -p "$JBM_DEST"
-        sudo cp "$JBM_TMP"/extracted/*.ttf "$JBM_DEST/"
+    if run_quiet "Installing JetBrains Mono Nerd Font" bash -c '
+        set -e
+        curl -fsSL -o "$1/jbm.zip" \
+            "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip"
+        (cd "$1" && unzip -q jbm.zip -d extracted)
+        sudo mkdir -p "$2"
+        sudo cp "$1"/extracted/*.ttf "$2/"
+    ' _ "$JBM_TMP" "$JBM_DEST"; then
+        :
     else
-        info "WARNING: Failed to download JetBrains Mono Nerd Font; kitty font_family will fall back."
+        warn "Failed to download JetBrains Mono Nerd Font; kitty font_family will fall back."
     fi
     rm -rf "$JBM_TMP"
 fi
@@ -307,24 +328,28 @@ fi
 FA_DEST="/usr/share/fonts/font-awesome-7"
 if [ ! -d "$FA_DEST" ]; then
     FA_TMP=$(mktemp -d)
-    if curl -fsSL -o "$FA_TMP/fa.zip" \
-        "https://github.com/FortAwesome/Font-Awesome/releases/download/7.3.0/fontawesome-free-7.3.0-desktop.zip"; then
-        (cd "$FA_TMP" && unzip -q fa.zip -d extracted)
-        sudo mkdir -p "$FA_DEST"
-        sudo cp "$FA_TMP"/extracted/*/otfs/*.otf "$FA_DEST/"
+    if run_quiet "Installing Font Awesome 7" bash -c '
+        set -e
+        curl -fsSL -o "$1/fa.zip" \
+            "https://github.com/FortAwesome/Font-Awesome/releases/download/7.3.0/fontawesome-free-7.3.0-desktop.zip"
+        (cd "$1" && unzip -q fa.zip -d extracted)
+        sudo mkdir -p "$2"
+        sudo cp "$1"/extracted/*/otfs/*.otf "$2/"
+    ' _ "$FA_TMP" "$FA_DEST"; then
+        :
     else
-        info "WARNING: Failed to download Font Awesome 7; waybar icons may not render."
+        warn "Failed to download Font Awesome 7; waybar icons may not render."
     fi
     rm -rf "$FA_TMP"
 fi
 
-sudo fc-cache -f
+sudo fc-cache -f >> "$LOG_FILE" 2>&1
 
 # --------------------------------------------------------------
 # Icons
 # --------------------------------------------------------------
 
-source $repo_path/setup/_icons.sh
+run_quiet "Installing icons" bash "$repo_path/setup/_icons.sh"
 
 # --------------------------------------------------------------
 # Create XDG Directories

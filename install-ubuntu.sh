@@ -32,6 +32,7 @@
 set -e
 
 repo_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export repo_path
 
 # Provide the info/warn/error helpers that setup/*.sh scripts expect from
 # the real installer framework (see ml4w-dotfiles-installer/lib/colors.sh).
@@ -42,6 +43,40 @@ export -f info warn error
 
 dotinst_file="$repo_path/hyprland-dotfiles.dotinst"
 backup_dir="$HOME/.ml4w-backup-$(date +%Y%m%d-%H%M%S)"
+
+# Noisy command output (apt-get, cargo, cmake/ninja, go build, etc.) goes
+# here instead of the terminal. `gum spin` (installed by preflight-ubuntu.sh)
+# shows a spinner and only prints a wrapped command's output if it fails.
+LOG_FILE="$HOME/.ml4w-install.log"
+: > "$LOG_FILE"
+export LOG_FILE
+
+run_quiet() {
+    local title=$1; shift
+    echo "=== $title ===" >> "$LOG_FILE"
+    # Always tee into LOG_FILE, not just show-on-failure -- gum's own
+    # --show-error only prints to the terminal for a failed step and
+    # doesn't persist anything, so a compile failure scrolled past (or a
+    # step that succeeds but is worth checking later) left no record.
+    if ! gum spin --title "$title" --show-error -- bash -c '
+        set -o pipefail
+        "$@" 2>&1 | tee -a "$LOG_FILE"
+    ' _ "$@"; then
+        error "$title -- failed (see $LOG_FILE)"
+        return 1
+    fi
+}
+export -f run_quiet
+
+# A long install can easily outlast sudo's credential cache (typically
+# 15 min), and a password re-prompt inside a `gum spin`-wrapped step would
+# be invisible -- indistinguishable from a genuine hang. Keep the sudo
+# timestamp alive for the whole run instead. Requires the initial `sudo -v`
+# below to succeed interactively before any spinner starts.
+sudo -v
+( while kill -0 $$ 2>/dev/null; do sudo -n true; sleep 60; done ) &
+SUDO_KEEPALIVE_PID=$!
+trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null' EXIT
 
 # --------------------------------------------------------------
 # Require Ubuntu -- hard stop on anything else
@@ -71,8 +106,10 @@ fi
 # --------------------------------------------------------------
 
 info "Installing bootstrap prerequisites"
-sudo apt-get update -y
-sudo apt-get install -y git curl jq rsync make build-essential
+# gum isn't installed yet at this point in a fresh run, so this step is
+# quieted with plain log redirection rather than `gum spin`.
+sudo apt-get update -y >> "$LOG_FILE" 2>&1
+sudo apt-get install -y git curl jq rsync make build-essential >> "$LOG_FILE" 2>&1
 
 # --------------------------------------------------------------
 # Preflight (repositories + PPA)
@@ -91,15 +128,17 @@ echo "# ml4w Ubuntu install -- missing packages -- $(date)" > "$MISSING_LOG"
 install_package_file() {
     local file=$1
     [ -f "$file" ] || return 0
-    info "Installing packages from $(basename "$file")"
-    while IFS= read -r pkg || [ -n "$pkg" ]; do
-        pkg=$(echo "$pkg" | sed 's/#.*//' | xargs)
-        [[ -z "$pkg" ]] && continue
-        if ! sudo apt-get install -y "$pkg" 2>/dev/null; then
-            echo "$pkg" >> "$MISSING_LOG"
-            warn "skipped $pkg (logged)"
-        fi
-    done < "$file"
+    # One spinner for the whole file rather than one per package (this list
+    # can run past 80 entries) -- per-package failures still get logged to
+    # MISSING_LOG and reported via the summary warn below, they're just not
+    # printed live anymore.
+    run_quiet "Installing packages from $(basename "$file")" bash -c '
+        while IFS= read -r pkg || [ -n "$pkg" ]; do
+            pkg=$(echo "$pkg" | sed "s/#.*//" | xargs)
+            [ -z "$pkg" ] && continue
+            sudo apt-get install -y "$pkg" >> "$2" 2>&1 || echo "$pkg" >> "$1"
+        done < "$3"
+    ' _ "$MISSING_LOG" "$LOG_FILE" "$file"
 }
 
 install_package_file "$repo_path/setup/dependencies/packages"
@@ -132,10 +171,8 @@ if [ ${#restore_sources[@]} -gt 0 ]; then
     done
 fi
 
-info "Deploying dotfiles from $repo_path/dotfiles/"
-rsync -av \
-    "$repo_path/dotfiles/" \
-    "$HOME/"
+run_quiet "Deploying dotfiles from $repo_path/dotfiles/" \
+    rsync -a "$repo_path/dotfiles/" "$HOME/"
 
 # The real installer always creates ~/.mydotfiles/<profile_id>/ as part of
 # its stage-then-symlink deployment (see the header comment above) -- this

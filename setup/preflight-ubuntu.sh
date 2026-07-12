@@ -9,15 +9,18 @@ mkdir -p "$HOME/.local/bin"
 # Repositories
 # --------------------------------------------------------------
 
-sudo apt-get install -y software-properties-common
-sudo add-apt-repository -y universe
-sudo add-apt-repository -y restricted
+# gum isn't installed yet at this point in a fresh run (it's installed at
+# the end of this script), so these early repository-setup steps are
+# quieted with plain log redirection rather than `gum spin`.
+sudo apt-get install -y software-properties-common >> "${LOG_FILE:-/dev/null}" 2>&1
+sudo add-apt-repository -y universe >> "${LOG_FILE:-/dev/null}" 2>&1
+sudo add-apt-repository -y restricted >> "${LOG_FILE:-/dev/null}" 2>&1
 
 # Hyprland core (hyprland, hypridle, hyprlock, hyprpicker, hyprsunset,
 # hyprpolkitagent, hyprland-guiutils, xdg-desktop-portal-hyprland)
 if ! grep -Rq "cppiber.*hyprland" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
     info "Adding PPA: ppa:cppiber/hyprland"
-    sudo add-apt-repository -y ppa:cppiber/hyprland
+    sudo add-apt-repository -y ppa:cppiber/hyprland >> "${LOG_FILE:-/dev/null}" 2>&1
 else
     info "Hyprland PPA already present"
 fi
@@ -27,7 +30,7 @@ fi
 # already validated to work)
 if ! grep -Rq "avengemedia.*danklinux" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
     info "Adding PPA: ppa:avengemedia/danklinux"
-    sudo add-apt-repository -y ppa:avengemedia/danklinux
+    sudo add-apt-repository -y ppa:avengemedia/danklinux >> "${LOG_FILE:-/dev/null}" 2>&1
 else
     info "danklinux PPA already present"
 fi
@@ -49,7 +52,7 @@ fi
 # entry resolves to a real .deb, matching what Arch/Fedora/openSUSE get.
 if ! grep -Rq "mozillateam.*ppa" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
     info "Adding PPA: ppa:mozillateam/ppa (native Firefox .deb, not the snap)"
-    sudo add-apt-repository -y ppa:mozillateam/ppa
+    sudo add-apt-repository -y ppa:mozillateam/ppa >> "${LOG_FILE:-/dev/null}" 2>&1
 fi
 sudo tee /etc/apt/preferences.d/mozilla-firefox > /dev/null <<-'EOF'
 	Package: *
@@ -60,12 +63,22 @@ sudo tee /etc/apt/apt.conf.d/51unattended-upgrades-firefox > /dev/null <<-'EOF'
 	Unattended-Upgrade::Allowed-Origins:: "LP-PPA-mozillateam:${distro_codename}";
 	EOF
 
-sudo apt-get update
+sudo apt-get update >> "${LOG_FILE:-/dev/null}" 2>&1
+
+# gum: only the repo was added above -- install it explicitly now rather
+# than leaving it to whatever later step happens to apt-get install it
+# first (previously that was the ML4W Settings App's patched bootstrap
+# line in post-ubuntu.sh, which meant nothing before that point --
+# including the package loop and dotfiles rsync in install-ubuntu.sh --
+# could use `gum spin` for quiet output).
+if ! command -v gum &> /dev/null; then
+    sudo apt-get install -y gum >> "${LOG_FILE:-/dev/null}" 2>&1
+fi
 
 # --------------------------------------------------------------
 # Uninstall swww if exists. To be replaced with awww in the next steps
 # --------------------------------------------------------------
 
 if dpkg -l 2>/dev/null | grep -q "^ii  swww "; then
-    sudo apt-get remove -y swww
+    sudo apt-get remove -y swww >> "${LOG_FILE:-/dev/null}" 2>&1
 fi
