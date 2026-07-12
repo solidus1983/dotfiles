@@ -31,6 +31,12 @@ hl.on("hyprland.start", function ()
     -- Start polkit daemon
     hl.exec_cmd("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")
 
+    -- Ubuntu ships hyprpolkitagent instead (via packages-ubuntu), but its
+    -- unit is WantedBy=graphical-session.target, which Hyprland never
+    -- activates, so it has to be started explicitly. No-op on distros
+    -- where the unit doesn't exist.
+    hl.exec_cmd("systemctl --user start hyprpolkitagent.service 2>/dev/null || true")
+
     -- Restore wallpaper (skip for quickshell — handled inside ml4w-autostart)
     if wallpaper_app ~= "quickshell" then
         hl.exec_cmd("~/.config/ml4w/scripts/ml4w-wallpaper-app --restore")
