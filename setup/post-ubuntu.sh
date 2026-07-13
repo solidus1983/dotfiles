@@ -5,23 +5,28 @@
 # exec-once launching of these daemons. Ubuntu's packaging ships
 # "enabled" units for these (WantedBy=graphical-session.target), which
 # Hyprland never activates directly, but at least one is triggered by
-# other means anyway (confirmed live: swaync.service races with the
-# exec-once launch and fails with "An instance of SwayNotificationCenter
-# is already running!"). Masking prevents the race outright rather than
-# relying on ordering. hyprpolkitagent.service is intentionally NOT
-# masked here -- it's the intended polkit agent and is started
-# explicitly from autostart.lua instead of relying on
+# other means anyway -- confirmed on the VM: without masking these,
+# GDM spams "Failed Units Monitor" alerts. hyprpolkitagent.service is
+# intentionally NOT masked here -- it's the intended polkit agent and
+# is started explicitly from autostart.lua instead of relying on
 # WantedBy=graphical-session.target (which Hyprland never activates).
 #
-# Confirmed on the VM this is still needed: without it, GDM spams
-# "Failed Units Monitor" alerts.
+# swaync.service is ALSO intentionally not masked (see below, near
+# autostart.lua's former swaync exec-once line, for why) -- it needs
+# D-Bus activation to still work so it can restart itself if it dies.
 # --------------------------------------------------------------
 
-for _svc in waybar.service hypridle.service hyprsunset.service swaync.service; do
+for _svc in waybar.service hypridle.service hyprsunset.service; do
     if systemctl --user list-unit-files "$_svc" &>/dev/null; then
         systemctl --user mask "$_svc" 2>/dev/null || true
     fi
 done
+
+# Undo swaync.service being masked by an earlier version of this script
+# (confirmed live: masking it broke D-Bus reactivation permanently --
+# every swaync-client call, including waybar's own notification-count
+# module, hangs forever trying to auto-activate a masked unit).
+systemctl --user unmask swaync.service 2>/dev/null || true
 
 # --------------------------------------------------------------
 # snapd-desktop-integration: on GDM-based Ubuntu installs, this snap

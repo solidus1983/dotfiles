@@ -1,6 +1,24 @@
 #!/usr/bin/env bash
 
 # ============================================================
+# Concurrency guard
+# ============================================================
+# Every wallpaper-change trigger (ml4w-autostart at login, manual changes
+# via waypaper/the settings app, ml4w-wallpaper-automation's periodic
+# --random calls) funnels through this script, but nothing serialized
+# them -- two overlapping runs race on the same matugen output files,
+# the same awww-daemon IPC calls, and reload_waybar()'s pgrep-then-branch
+# check against a concurrent waybar/launch.sh invocation (which has its
+# own lock, but this script never coordinated with it). Blocking rather
+# than waybar/launch.sh's non-blocking pattern: dropping a redundant
+# "reload with the same wallpaper" request is harmless, but dropping a
+# wallpaper *change* means the wrong wallpaper stays displayed, so a
+# second call should queue and still run to completion once the first
+# is done, not silently no-op.
+exec 201>"${XDG_RUNTIME_DIR:-/tmp}/ml4w-wallpaper.lock"
+flock 201
+
+# ============================================================
 # Variables
 # ============================================================
 IMAGE_PATH=""
@@ -152,13 +170,32 @@ reload_quickshell() {
 
 reload_pywalfox() {
     type pywalfox >/dev/null 2>&1 || return
-    pywalfox update
+    # pywalfox update blocks waiting for the browser extension's native
+    # messaging connection if Firefox isn't running (or the extension
+    # isn't connected) -- confirmed live, it hangs indefinitely with no
+    # timeout of its own. Now that this whole script is flock-guarded,
+    # a hang here would block every subsequent wallpaper change too, not
+    # just this one, so it needs its own bound.
+    if ! timeout 10 pywalfox update; then
+        warn "Pywalfox update timed out or failed, skipping"
+        return
+    fi
     info "Pywalfox updated"
 }
 
 reload_swaync() {
     sleep 0.1
-    swaync-client -rs
+    # swaync-client falls back to D-Bus-activating swaync via systemd if
+    # the directly-exec'd instance from autostart.lua isn't reachable --
+    # and hangs waiting for that indefinitely if it can't. Confirmed
+    # live: multiple swaync-client processes stuck forever after the
+    # manually-launched swaync had died at some point. Bounding this so
+    # a dead/unreachable swaync doesn't hang every future wallpaper
+    # change behind it (this script is flock-guarded now).
+    if ! timeout 5 swaync-client -rs; then
+        warn "swaync-client timed out or failed, skipping"
+        return
+    fi
     info "SwayNC refreshed"
 }
 
