@@ -28,6 +28,25 @@ done
 # module, hangs forever trying to auto-activate a masked unit).
 systemctl --user unmask swaync.service 2>/dev/null || true
 
+# swaync.service ships enabled (WantedBy=graphical-session.target,
+# preset: enabled), machine-wide -- a per-user `disable` can't override
+# that (confirmed live: systemctl --user disable warns it's "enabled in
+# global scope" and the unit restarts anyway). That means it also
+# eagerly starts under a stock GNOME session on the same machine, where
+# gnome-shell already owns org.freedesktop.Notifications -- swaync exits
+# 1 with "Could not acquire notification name", and systemd hits the
+# restart-rate-limit within seconds. A Hyprland-only condition drop-in
+# (mirroring the GNOME-only one for snapd-desktop-integration below)
+# stops it from starting under GNOME while leaving both the eager start
+# and D-Bus self-heal working under Hyprland.
+mkdir -p "$HOME/.config/systemd/user/swaync.service.d"
+cat > "$HOME/.config/systemd/user/swaync.service.d/hyprland-only.conf" <<-EOF
+[Unit]
+ConditionEnvironment=XDG_CURRENT_DESKTOP=Hyprland
+EOF
+
+systemctl --user daemon-reload 2>/dev/null || true
+
 # --------------------------------------------------------------
 # snapd-desktop-integration: on GDM-based Ubuntu installs, this snap
 # tries to run under every session (including Hyprland) and fails,
