@@ -278,7 +278,7 @@ trough highlight {
 }
 .notification-group-headers {
   font-weight: 900;
-  font-size: 0
+  font-size: 0;
 }
 
 .notification-group-icon {
@@ -306,5 +306,5 @@ trough highlight {
     opacity:1.0;
     padding:10px;
     margin:10px 0px 0px 0px;
-    box-shadow: 1 1 5 1px @shadow;
+    box-shadow: 1px 1px 5px 1px @shadow;
 }
