@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
 
 # --------------------------------------------------------------
-# Mask systemd --user units that duplicate autostart.lua's own
-# exec-once launching of these daemons. Ubuntu's packaging ships
-# "enabled" units for these (WantedBy=graphical-session.target), which
-# Hyprland never activates directly, but at least one is triggered by
-# other means anyway -- confirmed on the VM: without masking these,
-# GDM spams "Failed Units Monitor" alerts. hyprpolkitagent.service is
-# intentionally NOT masked here -- it's the intended polkit agent and
-# is started explicitly from autostart.lua instead of relying on
-# WantedBy=graphical-session.target (which Hyprland never activates).
+# Mask systemd --user units for daemons autostart.lua either launches
+# itself (waybar, hypridle, hyprsunset) or doesn't use at all
+# (hyprpaper -- pulled in transitively as a Recommends of the hyprland
+# apt package; this repo builds and uses awww instead). Ubuntu's
+# packaging ships "enabled" units for these (WantedBy=graphical-session.target),
+# which Hyprland never activates directly, but at least one is
+# triggered by other means anyway -- confirmed on the VM: without
+# masking these, GDM spams "Failed Units Monitor" alerts.
+# hyprpolkitagent.service is intentionally NOT masked here -- it's the
+# intended polkit agent and is started explicitly from autostart.lua
+# instead of relying on WantedBy=graphical-session.target (which
+# Hyprland never activates).
 #
 # swaync.service is ALSO intentionally not masked (see below, near
 # autostart.lua's former swaync exec-once line, for why) -- it needs
 # D-Bus activation to still work so it can restart itself if it dies.
 # --------------------------------------------------------------
 
-for _svc in waybar.service hypridle.service hyprsunset.service; do
+for _svc in waybar.service hypridle.service hyprsunset.service hyprpaper.service; do
     if systemctl --user list-unit-files "$_svc" &>/dev/null; then
         systemctl --user mask "$_svc" 2>/dev/null || true
     fi
