@@ -90,6 +90,44 @@ if [ -f /etc/xdg/autostart/polkit-mate-authentication-agent-1.desktop ]; then
 fi
 
 # --------------------------------------------------------------
+# Default GDM to the uwsm-managed Hyprland session
+# (hyprland-uwsm.desktop, Exec=uwsm start -e -D Hyprland
+# hyprland.desktop) instead of plain Hyprland (hyprland.desktop,
+# Exec=/usr/bin/start-hyprland). uwsm is already a listed dependency
+# (packages-ubuntu) but nothing made GDM actually use it -- confirmed
+# live, the default session run was plain Hyprland with no uwsm process
+# at all. That matters because uwsm imports WAYLAND_DISPLAY/environment
+# into systemd *before* activating graphical-session.target; without
+# it, this repo's own dbus-update-activation-environment call partway
+# through autostart.lua is the only thing doing that, which is too late
+# for graphical-session.target's own Wants= units (hyprpaper.service,
+# and previously waybar/hypridle/hyprsunset/swaync.service) to see the
+# right environment on their first activation attempt -- the root cause
+# of GDM's "Failed Units Monitor" spam, even for the ones that
+# ultimately self-heal via Restart=on-failure.
+#
+# GDM/AccountsService normally remembers this choice per-user once
+# someone manually picks a session at the greeter, stored in
+# /var/lib/AccountsService/users/<username> -- pre-seeding it here
+# means a fresh install gets it right without that manual step. Written
+# defensively (strip then re-add the two keys, or create the file if it
+# doesn't exist) rather than assuming the file's exact pre-existing
+# contents, since this piece wasn't verified live on the VM.
+if [ -f /usr/share/wayland-sessions/hyprland-uwsm.desktop ]; then
+    _accounts_file="/var/lib/AccountsService/users/$USER"
+    sudo mkdir -p /var/lib/AccountsService/users
+    # /var/lib/AccountsService/users/ isn't readable by a normal user
+    # (confirmed live: `ls` on the directory itself is Permission
+    # denied), so every check here needs sudo too, not just the writes.
+    if sudo test -f "$_accounts_file" && sudo grep -q '^\[User\]' "$_accounts_file"; then
+        sudo sed -i -e '/^Session=/d' -e '/^XSession=/d' "$_accounts_file"
+        sudo sed -i '/^\[User\]/a Session=hyprland-uwsm\nXSession=hyprland-uwsm' "$_accounts_file"
+    else
+        printf '[User]\nSession=hyprland-uwsm\nXSession=hyprland-uwsm\nSystemAccount=false\n' | sudo tee "$_accounts_file" > /dev/null
+    fi
+fi
+
+# --------------------------------------------------------------
 # Oh My Posh
 # --------------------------------------------------------------
 
@@ -172,13 +210,6 @@ if [ ! -x /usr/local/bin/awww ] || [ ! -x /usr/local/bin/awww-daemon ]; then
         sudo cp "$HOME/.cargo/bin/awww-daemon" /usr/local/bin/awww-daemon
     '
     info "awww installed to /usr/local/bin"
-fi
-
-# Remove hyprpaper -- conflicts with awww under uwsm, matches the
-# swww-removal guard in preflight-ubuntu.sh (same reasoning, different
-# wallpaper daemon).
-if dpkg -l 2>/dev/null | grep -q "^ii  hyprpaper "; then
-    sudo apt-get remove -y hyprpaper >> "$LOG_FILE" 2>&1
 fi
 
 # --------------------------------------------------------------
