@@ -34,7 +34,27 @@ bash <(curl -s https://raw.githubusercontent.com/mylinuxforwork/ml4w-powermenu/m
 # ML4W Walker (app launcher + its provider daemon, elephant)
 # --------------------------------------------------------------
 
-bash <(curl -s https://raw.githubusercontent.com/mylinuxforwork/ml4w-walker/main/install.sh)
+# ml4w-walker's own distro detection only matches arch/fedora/
+# opensuse-tumbleweed/ubuntu and exits 1 on Debian, so install its
+# runtime deps ourselves (same as its own base_packages() +
+# provider_packages() would for a recognized distro: libgtk-4-1/
+# libgtk4-layer-shell0/libpoppler-glib8t64 for the binary-mode base
+# install, wl-clipboard/imagemagick for the clipboard provider added
+# below) and skip its detection with --no-deps.
+#
+# Subshell-scoped read (matching ml4w-walker's own detect_distro(),
+# which does the same) instead of sourcing /etc/os-release directly
+# into this script -- that would leak ID/VERSION_ID/PRETTY_NAME/etc.
+# into every step below for the rest of this file's run.
+debian_id="$(. /etc/os-release 2>/dev/null && echo "${ID:-}")"
+if [ "$debian_id" = "debian" ]; then
+    sudo apt-get install -y \
+        libgtk-4-1 libgtk4-layer-shell0 libpoppler-glib8t64 \
+        wl-clipboard imagemagick
+    bash <(curl -s https://raw.githubusercontent.com/mylinuxforwork/ml4w-walker/main/install.sh) --no-deps
+else
+    bash <(curl -s https://raw.githubusercontent.com/mylinuxforwork/ml4w-walker/main/install.sh)
+fi
 ml4w-walker add clipboard
 
 # --------------------------------------------------------------
